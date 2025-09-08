@@ -46,10 +46,6 @@ jobs:
           junit-path:
             pytest.xml
           show-diffcover: 'true'
-          
-        - permissions:
-            checks: write
-            pull-requests: write
         - name: Review agent
           env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
