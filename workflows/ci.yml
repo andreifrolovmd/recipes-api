@@ -36,6 +36,9 @@ jobs:
         run: |
           poetry run coverage run -m pytest --junit-xml=pytest.xml
           poetry run coverage xml -o coverage.xml
+        - permissions:
+            checks: write
+            pull-requests: write
 
       - name: Publish coverage results
         if: always()
