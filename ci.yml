@@ -46,7 +46,9 @@ jobs:
           junit-path:
             pytest.xml
           show-diffcover: 'true'
-        - name: Review agent
+
+
+          - name: Review agent
           env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
             REPOSITORY: ${{ github.repository }}
