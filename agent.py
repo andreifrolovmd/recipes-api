@@ -10,33 +10,28 @@ from llama_index.core.agent import FunctionAgent
 from llama_index.core.agent.workflow import AgentWorkflow, AgentOutput, ToolCall, ToolCallResult
 from llama_index.core.workflow import Context
 from llama_index.core.prompts import RichPromptTemplate
-import dotenv
-
-dotenv.load_dotenv()
 
 # -----------------------------
 # Load Environment Variables
 # -----------------------------
-
+dotenv.load_dotenv()
 
 # Initialize GitHub client
+git = Github(os.getenv("GITHUB_TOKEN")) if os.getenv("GITHUB_TOKEN") else None
 
-
-github_client = Github(os.getenv("GITHUB_TOKEN")) if os.getenv("GITHUB_TOKEN") else None
-repository = os.getenv("REPOSITORY")
+# Repository configuration - get from environment variables
+repository = os.getenv("REPOSITORY")  # Format: username/repo-name
 pr_number = os.getenv("PR_NUMBER")
-query = "Write a review for PR: " + pr_number
 
-# Repository configuration - using the default from instructions
-repo_url = "https://github.com/andreifrolovmd/recipes-api.git"
-repo_name = repo_url.split('/')[-1].replace('.git', '')
-username = repo_url.split('/')[-2]
-full_repo_name = f"{username}/{repo_name}"
+if not repository:
+    raise ValueError("REPOSITORY environment variable is required")
+if not pr_number:
+    raise ValueError("PR_NUMBER environment variable is required")
 
 # Get repository object if GitHub token is available
 repo = None
 if git is not None:
-    repo = git.get_repo(full_repo_name)
+    repo = git.get_repo(repository)
 
 # -----------------------------
 # Setup LLM
@@ -44,7 +39,7 @@ if git is not None:
 llm = OpenAI(
     model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
     api_key=os.getenv("OPENAI_API_KEY"),
-    api_base=os.getenv("OPENAI_BASE_URL", "https://litellm.aks-hs-prod.int.hyperskill.org")
+    api_base=os.getenv("OPENAI_BASE_URL")
 )
 
 # -----------------------------
@@ -331,7 +326,8 @@ workflow_agent = AgentWorkflow(
 # Main async function for running the workflow
 # -----------------------------
 async def main():
-    query = input().strip()
+    # Get PR number from environment and construct query
+    query = f"Write a review for PR number {pr_number}"
     prompt = RichPromptTemplate(query)
 
     handler = workflow_agent.run(prompt.format())
@@ -355,9 +351,12 @@ async def main():
 # Entrypoint
 # -----------------------------
 if __name__ == "__main__":
-    asyncio.run(main())
-    if git:
-        git.close()
-
-
-
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        print(f"Error running workflow: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        if git:
+            git.close()
