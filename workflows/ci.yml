@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "main" ]
   pull_request:
-    types: [opened, reopened, synchronize, edited, closed]
+    types: [opened, reopened, synchronize, edited]
 
 jobs:
   ci:
@@ -21,10 +21,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.13'
+          python-version: '3.11' # Pinned to a stable version
 
       - name: Install Poetry
-        run:
+        run: |
           pip install poetry
 
       - name: Install dependencies
@@ -50,12 +50,14 @@ jobs:
             pytest.xml
           show-diffcover: 'true'
 
+      # New step to run the review agent on pull requests
       - name: Review agent
+        # This step will only run when the event is a pull request
         if: github.event_name == 'pull_request'
         env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-            REPOSITORY: ${{ github.repository }}
-            PR_NUMBER: ${{ github.event.pull_request.number }}
-            OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-            OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
         run: poetry run python agent.py
