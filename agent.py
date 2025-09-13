@@ -19,19 +19,24 @@ dotenv.load_dotenv()
 # Initialize GitHub client
 git = Github(os.getenv("GITHUB_TOKEN")) if os.getenv("GITHUB_TOKEN") else None
 
-# Repository configuration - get from environment variables
-repository = os.getenv("REPOSITORY")  # Format: username/repo-name
-pr_number = os.getenv("PR_NUMBER")
+# Repository configuration - using the default from instructions or environment
+repo_url = "https://github.com/andreifrolovmd/recipes-api.git"
+repo_name = repo_url.split('/')[-1].replace('.git', '')
+username = repo_url.split('/')[-2]
+full_repo_name = f"{username}/{repo_name}"
 
-if not repository:
-    raise ValueError("REPOSITORY environment variable is required")
-if not pr_number:
-    raise ValueError("PR_NUMBER environment variable is required")
+# For compatibility with both local testing and GitHub Actions
+repository = os.getenv("REPOSITORY", full_repo_name)
+pr_number = os.getenv("PR_NUMBER")
 
 # Get repository object if GitHub token is available
 repo = None
 if git is not None:
-    repo = git.get_repo(repository)
+    try:
+        repo = git.get_repo(repository)
+    except Exception as e:
+        print(f"Warning: Could not initialize repository {repository}: {e}")
+        repo = None
 
 # -----------------------------
 # Setup LLM
@@ -39,7 +44,7 @@ if git is not None:
 llm = OpenAI(
     model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
     api_key=os.getenv("OPENAI_API_KEY"),
-    api_base=os.getenv("OPENAI_BASE_URL")
+    api_base=os.getenv("OPENAI_BASE_URL", "https://litellm.aks-hs-prod.int.hyperskill.org")
 )
 
 # -----------------------------
@@ -62,20 +67,23 @@ def get_pr_details(pr_number: int) -> Dict[str, Any]:
         commit_SHAs = []
         commits = pull_request.get_commits()
 
-        for c in commits:
-            commit_SHAs.append(c.sha)
+        # Check if commits is not None before iterating
+        if commits is not None:
+            for c in commits:
+                if c and c.sha:
+                    commit_SHAs.append(c.sha)
 
         # Get the head SHA (last commit)
         head_sha = pull_request.head.sha if pull_request.head else None
 
         # Create PR details dictionary
         pr_details = {
-            "user": pull_request.user.login,
-            "author": pull_request.user.login,  # Include both for compatibility
-            "title": pull_request.title,
-            "body": pull_request.body,
-            "diff_url": pull_request.diff_url,
-            "state": pull_request.state,
+            "user": pull_request.user.login if pull_request.user else "unknown",
+            "author": pull_request.user.login if pull_request.user else "unknown",
+            "title": pull_request.title or "",
+            "body": pull_request.body or "",
+            "diff_url": pull_request.diff_url or "",
+            "state": pull_request.state or "unknown",
             "commit_SHAs": commit_SHAs,
             "head_sha": head_sha
         }
@@ -119,15 +127,19 @@ def get_pr_commit_details(commit_sha: str) -> List[Dict[str, Any]]:
 
         # Get changed files information
         changed_files: List[Dict[str, Any]] = []
-        for f in commit.files:
-            changed_files.append({
-                "filename": f.filename,
-                "status": f.status,
-                "additions": f.additions,
-                "deletions": f.deletions,
-                "changes": f.changes,
-                "patch": f.patch
-            })
+
+        # Check if commit.files is not None before iterating
+        if commit.files is not None:
+            for f in commit.files:
+                if f is not None:
+                    changed_files.append({
+                        "filename": f.filename or "unknown",
+                        "status": f.status or "unknown",
+                        "additions": f.additions or 0,
+                        "deletions": f.deletions or 0,
+                        "changes": f.changes or 0,
+                        "patch": f.patch or ""
+                    })
 
         return changed_files
 
@@ -167,7 +179,13 @@ async def add_context_to_state(ctx: Context, context: str) -> str:
     Add gathered context information to the state.
     """
     try:
+        if ctx is None or ctx.store is None:
+            return "Error: Context or store is not available"
+
         current_state = await ctx.store.get("state", default={})
+        if current_state is None:
+            current_state = {}
+
         current_state["gathered_contexts"] = context
         await ctx.store.set("state", current_state)
         return "Context added to state successfully."
@@ -179,7 +197,13 @@ async def add_comment_to_state(ctx: Context, draft_comment: str) -> str:
     Add draft comment to the state.
     """
     try:
+        if ctx is None or ctx.store is None:
+            return "Error: Context or store is not available"
+
         current_state = await ctx.store.get("state", default={})
+        if current_state is None:
+            current_state = {}
+
         current_state["review_comment"] = draft_comment
         await ctx.store.set("state", current_state)
         return "Draft comment added to state successfully."
@@ -191,7 +215,13 @@ async def add_final_review_to_state(ctx: Context, final_review: str) -> str:
     Add final review to the state.
     """
     try:
+        if ctx is None or ctx.store is None:
+            return "Error: Context or store is not available"
+
         current_state = await ctx.store.get("state", default={})
+        if current_state is None:
+            current_state = {}
+
         current_state["final_review_comment"] = final_review
         await ctx.store.set("state", current_state)
         return "Final review added to state successfully."
@@ -326,26 +356,52 @@ workflow_agent = AgentWorkflow(
 # Main async function for running the workflow
 # -----------------------------
 async def main():
-    # Get PR number from environment and construct query
-    query = f"Write a review for PR number {pr_number}"
-    prompt = RichPromptTemplate(query)
+    # Determine if we're running interactively or via environment variables
+    if pr_number is None:
+        # Interactive mode - ask for input
+        query = input().strip()
+    else:
+        # GitHub Actions mode or environment variable mode
+        try:
+            pr_num = int(pr_number)
+        except (ValueError, TypeError):
+            print(f"Invalid PR number: {pr_number}")
+            return
+        query = f"Write a review for PR number {pr_num}"
 
-    handler = workflow_agent.run(prompt.format())
+    if not query:
+        print("No query provided")
+        return
 
-    current_agent = None
-    async for event in handler.stream_events():
-        if hasattr(event, "current_agent_name") and event.current_agent_name != current_agent:
-            current_agent = event.current_agent_name
-            print(f"Current agent: {current_agent}")
-        elif isinstance(event, AgentOutput):
-            if event.response.content:
-                print("\n\nFinal response:", event.response.content)
-            if event.tool_calls:
-                print("Selected tools:", [call.tool_name for call in event.tool_calls])
-        elif isinstance(event, ToolCallResult):
-            print(f"Output from tool: {event.tool_output}")
-        elif isinstance(event, ToolCall):
-            print(f"Calling selected tool: {event.tool_name}, with arguments: {event.tool_kwargs}")
+    try:
+        prompt = RichPromptTemplate(query)
+        handler = workflow_agent.run(prompt.format())
+
+        current_agent = None
+        async for event in handler.stream_events():
+            try:
+                if hasattr(event, "current_agent_name") and event.current_agent_name != current_agent:
+                    current_agent = event.current_agent_name
+                    print(f"Current agent: {current_agent}")
+                elif isinstance(event, AgentOutput):
+                    if hasattr(event, 'response') and event.response and hasattr(event.response, 'content') and event.response.content:
+                        print("\n\nFinal response:", event.response.content)
+                    if hasattr(event, 'tool_calls') and event.tool_calls:
+                        print("Selected tools:", [call.tool_name for call in event.tool_calls if hasattr(call, 'tool_name')])
+                elif isinstance(event, ToolCallResult):
+                    if hasattr(event, 'tool_output') and event.tool_output:
+                        print(f"Output from tool: {event.tool_output}")
+                elif isinstance(event, ToolCall):
+                    if hasattr(event, 'tool_name') and hasattr(event, 'tool_kwargs'):
+                        print(f"Calling selected tool: {event.tool_name}, with arguments: {event.tool_kwargs}")
+            except Exception as event_error:
+                print(f"Error processing event: {event_error}")
+                continue
+
+    except Exception as workflow_error:
+        print(f"Error in workflow: {workflow_error}")
+        import traceback
+        traceback.print_exc()
 
 # -----------------------------
 # Entrypoint
