@@ -1,4 +1,6 @@
 [project]
+[tool.poetry]
+packages = [{ include = "recipes_api" }]
 name = "recipes-api"
 version = "0.1.0"
 description = ""
@@ -19,7 +21,7 @@ dependencies = [
     "coverage (>=7.8.0,<8.0.0)",
     "llama-index-core (>=0.13.6,<0.14.0)",
     "llama-index-llms-openai (>=0.5.4,<0.6.0)",
-    "PyGithub (>=2.8.1,<3.0.0)",
+    "PyGithub (>=2.8.1,<3.0.0)"
 ]
 
 [tool.poetry.dependencies]
