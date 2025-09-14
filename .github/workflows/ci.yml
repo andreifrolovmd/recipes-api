@@ -25,8 +25,7 @@ jobs:
         run: |
           poetry run python manage.py migrate --noinput
       - name: Run pytest with coverage
-        continue-on-error: true
-        run: |
+        run:
           poetry run coverage run -m pytest --junit-xml=pytest.xml
           poetry run coverage xml -o coverage.xml
       - name: Publish coverage results
