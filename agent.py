@@ -1,5 +1,4 @@
 import os
-import sys
 import dotenv
 import asyncio
 from typing import Dict, List, Any
@@ -17,46 +16,28 @@ from llama_index.core.prompts import RichPromptTemplate
 # -----------------------------
 dotenv.load_dotenv()
 
-# Handle both command line arguments (from GitHub Actions) and environment variables (for local dev)
-if len(sys.argv) > 1:
-    # GitHub Actions passes arguments
-    github_token = sys.argv[1] if len(sys.argv) > 1 else os.getenv("GITHUB_TOKEN")
-    repository = sys.argv[2] if len(sys.argv) > 2 else os.getenv("REPOSITORY")
-    pr_number = sys.argv[3] if len(sys.argv) > 3 else os.getenv("PR_NUMBER")
-    openai_api_key = sys.argv[4] if len(sys.argv) > 4 else os.getenv("OPENAI_API_KEY")
-    openai_base_url = sys.argv[5] if len(sys.argv) > 5 else os.getenv("OPENAI_BASE_URL")
-else:
-    # Local development uses environment variables
-    github_token = os.getenv("GITHUB_TOKEN")
-    repository = os.getenv("REPOSITORY")
-    pr_number = os.getenv("PR_NUMBER")
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    openai_base_url = os.getenv("OPENAI_BASE_URL")
 
-# Repository configuration - THIS IS WHAT THE TESTS ARE LOOKING FOR
-repo_url = f"https://github.com/{repository}.git" if repository else "https://github.com/andreifrolovmd/recipes-api.git"
+# Initialize GitHub client
+git = Github(os.getenv("GITHUB_TOKEN")) if os.getenv("GITHUB_TOKEN") else None
+
+# Repository configuration - using the default from instructions
+repo_url = "https://github.com/andreifrolovmd/recipes-api.git"
 repo_name = repo_url.split('/')[-1].replace('.git', '')
 username = repo_url.split('/')[-2]
 full_repo_name = f"{username}/{repo_name}"
 
-# Initialize GitHub client
-git = Github(github_token) if github_token else Github()
-
-# Get repository object
+# Get repository object if GitHub token is available
 repo = None
 if git is not None:
-    try:
-        repo = git.get_repo(full_repo_name)
-    except Exception as e:
-        print(f"Error accessing repository: {e}")
+    repo = git.get_repo(full_repo_name)
 
 # -----------------------------
 # Setup LLM
 # -----------------------------
 llm = OpenAI(
     model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-    api_key=openai_api_key,
-    api_base=openai_base_url or "https://litellm.aks-hs-prod.int.hyperskill.org"
+    api_key=os.getenv("OPENAI_API_KEY"),
+    api_base=os.getenv("OPENAI_BASE_URL", "https://litellm.aks-hs-prod.int.hyperskill.org")
 )
 
 # -----------------------------
@@ -88,7 +69,7 @@ def get_pr_details(pr_number: int) -> Dict[str, Any]:
         # Create PR details dictionary
         pr_details = {
             "user": pull_request.user.login,
-            "author": pull_request.user.login,
+            "author": pull_request.user.login,  # Include both for compatibility
             "title": pull_request.title,
             "body": pull_request.body,
             "diff_url": pull_request.diff_url,
@@ -149,7 +130,7 @@ def get_pr_commit_details(commit_sha: str) -> List[Dict[str, Any]]:
         return changed_files
 
     except Exception as e:
-        return [{"error": f"Failed to fetch commit details: {str(e)}", "details": str(e)}]
+        return [{"error": f"Failed to fetch commit details: {str(e)}"}]
 
 def post_review_to_github(pr_number: int, comment: str) -> str:
     """
@@ -343,13 +324,7 @@ workflow_agent = AgentWorkflow(
 # Main async function for running the workflow
 # -----------------------------
 async def main():
-    # Check if the PR number exists and is a valid integer
-    if pr_number and str(pr_number).isdigit():
-        query = f"Write a review for PR: {pr_number}"
-    else:
-        print("Error: PR number not found or is invalid.")
-        return  # Exit if no valid PR number is available
-
+    query = input().strip()
     prompt = RichPromptTemplate(query)
 
     handler = workflow_agent.run(prompt.format())
