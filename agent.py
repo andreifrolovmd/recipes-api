@@ -1,4 +1,5 @@
 import os
+import sys
 import dotenv
 import asyncio
 from typing import Dict, List, Any
@@ -16,28 +17,42 @@ from llama_index.core.prompts import RichPromptTemplate
 # -----------------------------
 dotenv.load_dotenv()
 
+# -----------------------------
+# GitHub Client & Repository Configuration
+# -----------------------------
 
-# Initialize GitHub client
-git = Github(os.getenv("GITHUB_TOKEN")) if os.getenv("GITHUB_TOKEN") else None
+# Use command-line arguments for dynamic configuration
+github_token = os.getenv("GITHUB_TOKEN") or (sys.argv[1] if len(sys.argv) > 1 else None)
+repo_url = sys.argv[2] if len(sys.argv) > 2 else "https://github.com/andreifrolovmd/recipes-api.git"
+pr_number = int(sys.argv[3]) if len(sys.argv) > 3 else None
+openai_api_key = os.getenv("OPENAI_API_KEY") or (sys.argv[4] if len(sys.argv) > 4 else None)
+openai_base_url = os.getenv("OPENAI_BASE_URL") or (sys.argv[5] if len(sys.argv) > 5 else "https://litellm.aks-hs-prod.int.hyperskill.org")
 
-# Repository configuration - using the default from instructions
-repo_url = "https://github.com/andreifrolovmd/recipes-api.git"
+git = Github(github_token) if github_token else None
+
 repo_name = repo_url.split('/')[-1].replace('.git', '')
 username = repo_url.split('/')[-2]
 full_repo_name = f"{username}/{repo_name}"
 
-# Get repository object if GitHub token is available
 repo = None
 if git is not None:
-    repo = git.get_repo(full_repo_name)
+    try:
+        repo = git.get_repo(full_repo_name)
+    except Exception as e:
+        print(f"Error: Could not get repository '{full_repo_name}'. Please check the REPOSITORY variable and GITHUB_TOKEN permissions. Details: {e}")
+        sys.exit(1)
+
+if pr_number is None:
+    print("Error: Pull request number not provided.")
+    sys.exit(1)
 
 # -----------------------------
 # Setup LLM
 # -----------------------------
 llm = OpenAI(
     model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-    api_key=os.getenv("OPENAI_API_KEY"),
-    api_base=os.getenv("OPENAI_BASE_URL", "https://litellm.aks-hs-prod.int.hyperskill.org")
+    api_key=openai_api_key,
+    api_base=openai_base_url
 )
 
 # -----------------------------
@@ -69,7 +84,7 @@ def get_pr_details(pr_number: int) -> Dict[str, Any]:
         # Create PR details dictionary
         pr_details = {
             "user": pull_request.user.login,
-            "author": pull_request.user.login,  # Include both for compatibility
+            "author": pull_request.user.login,
             "title": pull_request.title,
             "body": pull_request.body,
             "diff_url": pull_request.diff_url,
@@ -259,11 +274,11 @@ commentor_system_prompt = """You are the commentor agent that writes review comm
 Ensure to do the following for a thorough review:
  - Request for the PR details, changed files, and any other repo files you may need from the ContextAgent.
  - Once you have asked for all the needed information, write a good ~200-300 word review in markdown format detailing:
-    - What is good about the PR?
-    - Did the author follow ALL contribution rules? What is missing?
-    - Are there tests for new functionality? If there are new models, are there migrations for them? - use the diff to determine this.
-    - Are new endpoints documented? - use the diff to determine this.
-    - Which lines could be improved upon? Quote these lines and offer suggestions the author could implement.
+  - What is good about the PR?
+  - Did the author follow ALL contribution rules? What is missing?
+  - Are there tests for new functionality? If there are new models, are there migrations for them? - use the diff to determine this.
+  - Are new endpoints documented? - use the diff to determine this.
+  - Which lines could be improved upon? Quote these lines and offer suggestions the author could implement.
  - Use add_comment_to_state to save your review.
  - **Once you have successfully saved the review, you MUST hand off to the ReviewAndPostingAgent to finalize and post the review.**
  - If you need any additional details, you must hand off to the ContextAgent.
@@ -287,12 +302,12 @@ review_and_posting_system_prompt = """You are the Review and Posting agent. You 
 Your responsibilities:
 1. If no review comment exists in the state, request the CommentorAgent to create one.
 2. Once a review is generated, run a final check to ensure it meets these criteria:
-   - Be a ~200-300 word review in markdown format
-   - Specify what is good about the PR
-   - Check if the author followed ALL contribution rules and note what is missing
-   - Include notes on test availability for new functionality
-   - Include notes on whether new endpoints are documented  
-   - Include suggestions on which lines could be improved with quoted examples
+  - Be a ~200-300 word review in markdown format
+  - Specify what is good about the PR
+  - Check if the author followed ALL contribution rules and note what is missing
+  - Include notes on test availability for new functionality
+  - Include notes on whether new endpoints are documented
+  - Include suggestions on which lines could be improved with quoted examples
 
 3. If the review does not meet these criteria, ask the CommentorAgent to rewrite and address the concerns.
 4. When satisfied with the review, use add_final_review_to_state to save it, then post it to GitHub using post_review_to_github.
@@ -323,11 +338,13 @@ workflow_agent = AgentWorkflow(
 # -----------------------------
 # Main async function for running the workflow
 # -----------------------------
-async def main():
-    query = input().strip()
+async def main(pr_number: int):
+    # Construct a dynamic prompt based on the PR number
+    query = f"Please review pull request with number {pr_number}. Once the review is complete, please post it to the pull request."
+    
     prompt = RichPromptTemplate(query)
 
-    handler = workflow_agent.run(prompt.format())
+    handler = workflow_agent.run(prompt.format(), pr_number=pr_number)
 
     current_agent = None
     async for event in handler.stream_events():
@@ -348,6 +365,11 @@ async def main():
 # Entrypoint
 # -----------------------------
 if __name__ == "__main__":
-    asyncio.run(main())
+    if len(sys.argv) < 4:
+        print("Usage: python agent.py <GITHUB_TOKEN> <REPOSITORY> <PR_NUMBER> [OPENAI_API_KEY] [OPENAI_BASE_URL]")
+        sys.exit(1)
+
+    pr_number_from_args = int(sys.argv[3])
+    asyncio.run(main(pr_number_from_args))
     if git:
         git.close()
