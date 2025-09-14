@@ -347,7 +347,7 @@ async def main():
     # Construct a dynamic prompt based on the PR number
     query = f"Write and post a review for PR number {pr_number} in the repository {full_repo_name}."
     print(f"Starting agent workflow with query: '{query}'")
-    
+
     try:
         response = await workflow_agent.arun(input=query)
         print("\nWorkflow finished.")
