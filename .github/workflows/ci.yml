@@ -47,7 +47,6 @@ jobs:
 
       # This is the step that Test #5 is looking for.
       - name: Review agent
-        if: github.event_name == 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
