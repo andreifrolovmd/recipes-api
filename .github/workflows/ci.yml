@@ -1,50 +1,38 @@
 name: CI
-
 on:
   pull_request:
-
 jobs:
   ci:
     runs-on: ubuntu-latest
     permissions:
       checks: write
       pull-requests: write
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.13'
-
       - name: Install Poetry
-        run:
-          pip install poetry
-
+        run: pip install poetry
       - name: Install dependencies
         run: |
           poetry install --no-root
-
-      - name : Run migrations
+      - name: Run migrations
         run: |
           poetry run python manage.py migrate --noinput
-
       - name: Run pytest with coverage
         continue-on-error: true
         run: |
           poetry run coverage run -m pytest --junit-xml=pytest.xml
           poetry run coverage xml -o coverage.xml
-
       - name: Publish coverage results
         if: always()
         uses: aGallea/tests-coverage-report@v1
         with:
-          cobertura-path:
-            coverage.xml
-          junit-path:
-            pytest.xml
+          cobertura-path: coverage.xml
+          junit-path: pytest.xml
           show-diffcover: 'true'
       - name: Review agent
         env:
@@ -53,4 +41,4 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
-        run: poetry run python agent.py $GITHUB_TOKEN $REPOSITORY $PR_NUMBER $OPENAI_API_KEY $OPENAI_BASE_URL  
+        run: poetry run python agent.py
