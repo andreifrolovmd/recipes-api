@@ -1,5 +1,4 @@
 [project]
-[tool.poetry]
 packages = [{ include = "recipes_api" }]
 name = "recipes-api"
 version = "0.1.0"
