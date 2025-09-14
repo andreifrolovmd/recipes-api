@@ -1,28 +1,34 @@
 import os
 import sys
-import dotenv
 import asyncio
 from typing import Dict, List, Any
 from github import Github
-
-from llama_index.llms.openai import OpenAI
-from llama_index.core.tools import FunctionTool
-from llama_index.core.agent import FunctionAgent
-from llama_index.core.agent.workflow import AgentWorkflow, AgentOutput, ToolCall, ToolCallResult
-from llama_index.core.workflow import Context
-from llama_index.core.prompts import RichPromptTemplate
+import openai
 
 # -----------------------------
-# Load Environment Variables
+# Load Environment Variables and Command Line Arguments
 # -----------------------------
-dotenv.load_dotenv()
+try:
+    import dotenv
+    dotenv.load_dotenv()
+except ImportError:
+    pass
 
-# Get configuration from environment variables (GitHub Actions sets these)
-github_token = os.getenv("GITHUB_TOKEN")
-repository = os.getenv("REPOSITORY")  # This will be like "andreifrolovmd/recipes-api"
-pr_number = os.getenv("PR_NUMBER")
-openai_api_key = os.getenv("OPENAI_API_KEY")
-openai_base_url = os.getenv("OPENAI_BASE_URL")
+# Handle both environment variables and command line arguments
+if len(sys.argv) >= 6:
+    # Command line arguments provided (for compatibility)
+    github_token = sys.argv[1]
+    repository = sys.argv[2]
+    pr_number = sys.argv[3]
+    openai_api_key = sys.argv[4]
+    openai_base_url = sys.argv[5]
+else:
+    # Get configuration from environment variables (preferred method)
+    github_token = os.getenv("GITHUB_TOKEN")
+    repository = os.getenv("REPOSITORY")
+    pr_number = os.getenv("PR_NUMBER")
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    openai_base_url = os.getenv("OPENAI_BASE_URL")
 
 # Validate required environment variables
 if not github_token:
@@ -51,315 +57,136 @@ except Exception as e:
     sys.exit(1)
 
 # Validate PR number
-if not pr_number or not pr_number.isdigit():
+if not pr_number or not str(pr_number).isdigit():
     print("Error: Pull request number not provided or invalid.")
     sys.exit(1)
 
 pr_number = int(pr_number)
 
-# -----------------------------
-# Setup LLM
-# -----------------------------
-llm = OpenAI(
-    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-    api_key=openai_api_key,
-    api_base=openai_base_url or "https://api.openai.com/v1"
-)
+# Setup OpenAI client
+openai.api_key = openai_api_key
+if openai_base_url:
+    openai.api_base = openai_base_url
 
 # -----------------------------
-# GitHub Tool Functions
+# Simple PR Review Functions
 # -----------------------------
 
-def get_pr_details(pr_number: int) -> Dict[str, Any]:
-    """
-    Get details about a pull request given its number.
-    Returns author, title, body, diff_url, state, and commit SHAs.
-    """
+def get_pr_details(pr_num: int) -> Dict[str, Any]:
+    """Get details about a pull request."""
     try:
-        # Get the pull request
-        pull_request = repo.get_pull(pr_number)
-
-        # Get commit SHAs
-        commit_SHAs = []
-        commits = pull_request.get_commits()
-
-        for c in commits:
-            commit_SHAs.append(c.sha)
-
-        # Get the head SHA (last commit)
-        head_sha = pull_request.head.sha if pull_request.head else None
-
-        # Create PR details dictionary
-        pr_details = {
-            "user": pull_request.user.login,
+        pull_request = repo.get_pull(pr_num)
+        return {
             "author": pull_request.user.login,
             "title": pull_request.title,
-            "body": pull_request.body,
-            "diff_url": pull_request.diff_url,
+            "body": pull_request.body or "No description provided",
             "state": pull_request.state,
-            "commit_SHAs": commit_SHAs,
-            "head_sha": head_sha
         }
-
-        return pr_details
-
     except Exception as e:
         return {"error": f"Failed to fetch PR details: {str(e)}"}
 
-def get_file_contents(file_path: str) -> str:
-    """
-    Fetch the contents of a file from the repository given its path.
-    """
+def get_pr_files(pr_num: int) -> List[Dict[str, Any]]:
+    """Get changed files in a pull request."""
     try:
-        # Get file contents from the default branch
-        file_content = repo.get_contents(file_path)
-
-        # Decode and return the content
-        if file_content.encoding == "base64":
-            return file_content.decoded_content.decode('utf-8')
-        else:
-            return file_content.content
-
-    except Exception as e:
-        return f"Error fetching file: {str(e)}"
-
-def get_pr_commit_details(commit_sha: str) -> List[Dict[str, Any]]:
-    """
-    Get details about a specific commit including changed files and their diffs.
-    Returns a list of changed files directly.
-    """
-    try:
-        # Get the commit
-        commit = repo.get_commit(commit_sha)
-
-        # Get changed files information
-        changed_files: List[Dict[str, Any]] = []
-        for f in commit.files:
-            changed_files.append({
-                "filename": f.filename,
-                "status": f.status,
-                "additions": f.additions,
-                "deletions": f.deletions,
-                "changes": f.changes,
-                "patch": f.patch
+        pull_request = repo.get_pull(pr_num)
+        files = []
+        for file in pull_request.get_files():
+            files.append({
+                "filename": file.filename,
+                "status": file.status,
+                "additions": file.additions,
+                "deletions": file.deletions,
+                "patch": file.patch[:1000] if file.patch else "No patch available"  # Limit patch size
             })
-
-        return changed_files
-
+        return files
     except Exception as e:
-        return [{"error": f"Failed to fetch commit details: {str(e)}"}]
+        return [{"error": f"Failed to fetch files: {str(e)}"}]
 
-def post_review_to_github(pr_number: int, comment: str) -> str:
-    """
-    Post a review comment to a GitHub pull request.
-    """
+def generate_review_comment(pr_details: Dict, files: List[Dict]) -> str:
+    """Generate a review comment using OpenAI."""
     try:
-        # Get the pull request
-        pull_request = repo.get_pull(pr_number)
+        # Prepare context for the review
+        context = f"""
+PR Title: {pr_details.get('title', 'N/A')}
+Author: {pr_details.get('author', 'N/A')}
+Description: {pr_details.get('body', 'No description')}
 
-        # Try both methods to ensure the comment is posted
-        try:
-            # First try creating a review
-            review = pull_request.create_review(body=comment)
-            return f"Review posted successfully to PR #{pr_number}. Review ID: {review.id}"
-        except Exception as review_error:
-            # If review fails, try issue comment
-            comment_obj = pull_request.create_issue_comment(body=comment)
-            return f"Comment posted successfully to PR #{pr_number}. Comment ID: {comment_obj.id}"
+Changed Files:
+"""
+        for file in files[:5]:  # Limit to first 5 files
+            if "error" not in file:
+                context += f"- {file['filename']} ({file['status']}, +{file['additions']} -{file['deletions']})\n"
 
+        prompt = f"""Please write a concise code review comment (200-300 words) for this pull request:
+
+{context}
+
+Your review should include:
+1. What's good about the PR
+2. Any potential issues or improvements
+3. Whether tests are needed for new functionality
+4. Documentation suggestions if applicable
+
+Write the review in a helpful, constructive tone addressing the author directly."""
+
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful code reviewer."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500,
+            temperature=0.7
+        )
+
+        return response.choices[0].message.content
     except Exception as e:
-        return f"Error posting review: {str(e)}"
+        return f"Error generating review: {str(e)}"
 
-# -----------------------------
-# State Management Functions
-# -----------------------------
-
-async def add_context_to_state(ctx: Context, context: str) -> str:
-    """
-    Add gathered context information to the state.
-    """
+def post_review_comment(pr_num: int, comment: str) -> str:
+    """Post a review comment to GitHub."""
     try:
-        current_state = await ctx.store.get("state", default={})
-        current_state["gathered_contexts"] = context
-        await ctx.store.set("state", current_state)
-        return "Context added to state successfully."
+        pull_request = repo.get_pull(pr_num)
+        comment_obj = pull_request.create_issue_comment(body=comment)
+        return f"Comment posted successfully to PR #{pr_num}. Comment ID: {comment_obj.id}"
     except Exception as e:
-        return f"Error adding context to state: {str(e)}"
-
-async def add_comment_to_state(ctx: Context, draft_comment: str) -> str:
-    """
-    Add draft comment to the state.
-    """
-    try:
-        current_state = await ctx.store.get("state", default={})
-        current_state["review_comment"] = draft_comment
-        await ctx.store.set("state", current_state)
-        return "Draft comment added to state successfully."
-    except Exception as e:
-        return f"Error adding comment to state: {str(e)}"
-
-async def add_final_review_to_state(ctx: Context, final_review: str) -> str:
-    """
-    Add final review to the state.
-    """
-    try:
-        current_state = await ctx.store.get("state", default={})
-        current_state["final_review_comment"] = final_review
-        await ctx.store.set("state", current_state)
-        return "Final review added to state successfully."
-    except Exception as e:
-        return f"Error adding final review to state: {str(e)}"
+        return f"Error posting comment: {str(e)}"
 
 # -----------------------------
-# Convert functions to tools
+# Main Function
 # -----------------------------
-pr_details_tool = FunctionTool.from_defaults(
-    get_pr_details,
-    name="get_pr_details"
-)
-
-file_contents_tool = FunctionTool.from_defaults(
-    get_file_contents,
-    name="get_file_contents"
-)
-
-pr_commit_details_tool = FunctionTool.from_defaults(
-    get_pr_commit_details,
-    name="get_pr_commit_details"
-)
-
-add_context_to_state_tool = FunctionTool.from_defaults(
-    add_context_to_state,
-    name="add_context_to_state"
-)
-
-add_comment_to_state_tool = FunctionTool.from_defaults(
-    add_comment_to_state,
-    name="add_comment_to_state"
-)
-
-add_final_review_to_state_tool = FunctionTool.from_defaults(
-    add_final_review_to_state,
-    name="add_final_review_to_state"
-)
-
-post_review_to_github_tool = FunctionTool.from_defaults(
-    post_review_to_github,
-    name="post_review_to_github"
-)
-
-# -----------------------------
-# Create the ContextAgent with FunctionAgent
-# -----------------------------
-context_system_prompt = """You are the context gathering agent. When gathering context, you MUST gather:
-- The PR details: author, title, body, diff_url, state, and head_sha;
-- Changed files from commits;
-- Any additional requested files;
-Once you gather the requested info, use add_context_to_state to save it, then you MUST hand control back to the CommentorAgent."""
-
-context_agent = FunctionAgent(
-    llm=llm,
-    name="ContextAgent",
-    description="Gathers all needed context for PR review including details, diffs, and files.",
-    tools=[pr_details_tool, file_contents_tool, pr_commit_details_tool, add_context_to_state_tool],
-    system_prompt=context_system_prompt,
-    can_handoff_to=["CommentorAgent"]
-)
-
-# -----------------------------
-# Create the CommentorAgent
-# -----------------------------
-commentor_system_prompt = """You are the commentor agent that writes review comments for pull requests as a human reviewer would.
-Ensure to do the following for a thorough review:
- - Request for the PR details, changed files, and any other repo files you may need from the ContextAgent.
- - Once you have asked for all the needed information, write a good ~200-300 word review in markdown format detailing:
-    - What is good about the PR?
-    - Did the author follow ALL contribution rules? What is missing?
-    - Are there tests for new functionality? If there are new models, are there migrations for them? - use the diff to determine this.
-    - Are new endpoints documented? - use the diff to determine this.
-    - Which lines could be improved upon? Quote these lines and offer suggestions the author could implement.
- - Use add_comment_to_state to save your review.
- - **Once you have successfully saved the review, you MUST hand off to the ReviewAndPostingAgent to finalize and post the review.**
- - If you need any additional details, you must hand off to the ContextAgent.
- - You should directly address the author. So your comments should sound like:
- "Thanks for fixing this. I think all places where we call quote should be fixed. Can you roll this fix out everywhere?" """
-
-commentor_agent = FunctionAgent(
-    llm=llm,
-    name="CommentorAgent",
-    description="Uses the context gathered by the context agent to draft a pull review comment.",
-    tools=[add_comment_to_state_tool],
-    system_prompt=commentor_system_prompt,
-    can_handoff_to=["ContextAgent", "ReviewAndPostingAgent"]
-)
-
-# -----------------------------
-# Create the ReviewAndPostingAgent
-# -----------------------------
-review_and_posting_system_prompt = """You are the Review and Posting agent. You coordinate the entire review process and ensure reviews are posted to GitHub.
-
-Your responsibilities:
-1. If no review comment exists in the state, request the CommentorAgent to create one.
-2. Once a review is generated, run a final check to ensure it meets these criteria:
-   - Be a ~200-300 word review in markdown format
-   - Specify what is good about the PR
-   - Check if the author followed ALL contribution rules and note what is missing
-   - Include notes on test availability for new functionality
-   - Include notes on whether new endpoints are documented  
-   - Include suggestions on which lines could be improved with quoted examples
-
-3. If the review does not meet these criteria, ask the CommentorAgent to rewrite and address the concerns.
-4. When satisfied with the review, use add_final_review_to_state to save it, then post it to GitHub using post_review_to_github.
-5. Always extract the PR number from the user's request to post the review."""
-
-review_and_posting_agent = FunctionAgent(
-    llm=llm,
-    name="ReviewAndPostingAgent",
-    description="Reviews the draft comment and posts the final review to GitHub.",
-    tools=[add_final_review_to_state_tool, post_review_to_github_tool],
-    system_prompt=review_and_posting_system_prompt,
-    can_handoff_to=["CommentorAgent"]
-)
-
-# -----------------------------
-# Create the Workflow
-# -----------------------------
-workflow_agent = AgentWorkflow(
-    agents=[context_agent, commentor_agent, review_and_posting_agent],
-    root_agent=review_and_posting_agent.name,
-    initial_state={
-        "gathered_contexts": "",
-        "review_comment": "",
-        "final_review_comment": ""
-    },
-)
-
-# -----------------------------
-# Main async function for running the workflow
-# -----------------------------
-async def main():
+def main():
     print(f"Environment Variables:")
     print(f"  - REPOSITORY: {repository}")
     print(f"  - PR_NUMBER: {pr_number}")
     print(f"  - GITHUB_TOKEN: {'Set' if github_token else 'Not set'}")
     print(f"  - OPENAI_API_KEY: {'Set' if openai_api_key else 'Not set'}")
 
-    # Construct a dynamic prompt based on the PR number
-    query = f"Write and post a review for PR number {pr_number} in the repository {full_repo_name}."
-    print(f"Starting agent workflow with query: '{query}'")
-    
-    try:
-        response = await workflow_agent.arun(input=query)
-        print("\nWorkflow finished.")
-        print("Final response:", response)
-    except Exception as e:
-        print(f"\nWorkflow failed with error: {str(e)}")
-        raise
+    print(f"Starting PR review for PR #{pr_number} in {full_repo_name}")
 
-# -----------------------------
-# Entrypoint
-# -----------------------------
+    # Get PR details
+    print("Fetching PR details...")
+    pr_details = get_pr_details(pr_number)
+    if "error" in pr_details:
+        print(f"Error: {pr_details['error']}")
+        return
+
+    # Get changed files
+    print("Fetching changed files...")
+    files = get_pr_files(pr_number)
+
+    # Generate review comment
+    print("Generating review comment...")
+    comment = generate_review_comment(pr_details, files)
+
+    # Post the comment
+    print("Posting review comment...")
+    result = post_review_comment(pr_number, comment)
+    print(f"Result: {result}")
+
+    print("PR review completed successfully!")
+
 if __name__ == "__main__":
-    asyncio.run(main())
-    if git:
+    main()
+    if 'git' in locals():
         git.close()
