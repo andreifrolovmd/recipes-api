@@ -25,9 +25,9 @@ jobs:
         run: |
           poetry run python manage.py migrate --noinput
       - name: Run pytest with coverage
-        run:
-          poetry run coverage run -m pytest --junit-xml=pytest.xml
-          poetry run coverage xml -o coverage.xml
+        run: |
+            poetry run coverage run -m pytest --junit-xml=pytest.xml
+            poetry run coverage xml -o coverage.xml
       - name: Publish coverage results
         if: always()
         uses: aGallea/tests-coverage-report@v1
