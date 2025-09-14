@@ -1,11 +1,9 @@
 name: CI
-
 on:
   push:
     branches: [ "main" ]
   pull_request:
     types: [opened, reopened, synchronize, edited]
-
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -13,30 +11,23 @@ jobs:
       checks: write
       pull-requests: write
     timeout-minutes: 15
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-
       - name: Install Poetry
         run: pip install poetry
-
       - name: Install dependencies
         run: poetry install --no-root
-
       - name: Run migrations
         run: poetry run python manage.py migrate --noinput
-
       - name: Run pytest with coverage
         run: |
           poetry run coverage run -m pytest --junit-xml=pytest.xml
           poetry run coverage xml -o coverage.xml
-
       - name: Publish coverage results
         if: always()
         uses: aGallea/tests-coverage-report@v1
@@ -44,8 +35,6 @@ jobs:
           cobertura-path: coverage.xml
           junit-path: pytest.xml
           show-diffcover: 'true'
-
-      # This is the step that Test #5 is looking for.
       - name: Review agent
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
