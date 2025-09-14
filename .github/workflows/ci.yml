@@ -34,7 +34,7 @@ jobs:
           cobertura-path: coverage.xml
           junit-path: pytest.xml
           show-diffcover: 'true'
-      - name: Review agent
+      - name: Run agent
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
