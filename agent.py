@@ -24,25 +24,31 @@ pr_number = os.getenv("PR_NUMBER")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 openai_base_url = os.getenv("OPENAI_BASE_URL")
 
-# For repository URL construction
-repo_url = f"https://github.com/{repository}.git" if repository else "https://github.com/andreifrolovmd/recipes-api.git"
+# Validate required environment variables
+if not github_token:
+    print("Error: GITHUB_TOKEN environment variable not set.")
+    sys.exit(1)
+
+if not repository:
+    print("Error: REPOSITORY environment variable not set.")
+    sys.exit(1)
+
+if not openai_api_key:
+    print("Error: OPENAI_API_KEY environment variable not set.")
+    sys.exit(1)
 
 # Extract repository parts
-repo_name = repo_url.split('/')[-1].replace('.git', '')
-username = repo_url.split('/')[-2]
-full_repo_name = f"{username}/{repo_name}"
+username, repo_name = repository.split('/')
+full_repo_name = repository
 
 # Initialize GitHub client
-git = Github(github_token) if github_token else None
-
-# Get repository object
-repo = None
-if git is not None:
-    try:
-        repo = git.get_repo(full_repo_name)
-        print(f"Successfully connected to repository: {full_repo_name}")
-    except Exception as e:
-        print(f"Error: Could not get repository '{full_repo_name}'. Details: {e}")
+try:
+    git = Github(github_token)
+    repo = git.get_repo(full_repo_name)
+    print(f"Successfully connected to repository: {full_repo_name}")
+except Exception as e:
+    print(f"Error: Could not get repository '{full_repo_name}'. Details: {e}")
+    sys.exit(1)
 
 # Validate PR number
 if not pr_number or not pr_number.isdigit():
@@ -57,7 +63,7 @@ pr_number = int(pr_number)
 llm = OpenAI(
     model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
     api_key=openai_api_key,
-    api_base=openai_base_url or "https://litellm.aks-hs-prod.int.hyperskill.org"
+    api_base=openai_base_url or "https://api.openai.com/v1"
 )
 
 # -----------------------------
@@ -69,9 +75,6 @@ def get_pr_details(pr_number: int) -> Dict[str, Any]:
     Get details about a pull request given its number.
     Returns author, title, body, diff_url, state, and commit SHAs.
     """
-    if repo is None:
-        return {"error": "GitHub repository not initialized"}
-
     try:
         # Get the pull request
         pull_request = repo.get_pull(pr_number)
@@ -107,9 +110,6 @@ def get_file_contents(file_path: str) -> str:
     """
     Fetch the contents of a file from the repository given its path.
     """
-    if repo is None:
-        return "Error: GitHub repository not initialized"
-
     try:
         # Get file contents from the default branch
         file_content = repo.get_contents(file_path)
@@ -128,9 +128,6 @@ def get_pr_commit_details(commit_sha: str) -> List[Dict[str, Any]]:
     Get details about a specific commit including changed files and their diffs.
     Returns a list of changed files directly.
     """
-    if repo is None:
-        return [{"error": "GitHub repository not initialized"}]
-
     try:
         # Get the commit
         commit = repo.get_commit(commit_sha)
@@ -156,9 +153,6 @@ def post_review_to_github(pr_number: int, comment: str) -> str:
     """
     Post a review comment to a GitHub pull request.
     """
-    if repo is None:
-        return "Error: GitHub repository not initialized"
-
     try:
         # Get the pull request
         pull_request = repo.get_pull(pr_number)
@@ -258,9 +252,9 @@ post_review_to_github_tool = FunctionTool.from_defaults(
 # Create the ContextAgent with FunctionAgent
 # -----------------------------
 context_system_prompt = """You are the context gathering agent. When gathering context, you MUST gather:
-- The details: author, title, body, diff_url, state, and head_sha;
-- Changed files;
-- Any requested for files;
+- The PR details: author, title, body, diff_url, state, and head_sha;
+- Changed files from commits;
+- Any additional requested files;
 Once you gather the requested info, use add_context_to_state to save it, then you MUST hand control back to the CommentorAgent."""
 
 context_agent = FunctionAgent(
