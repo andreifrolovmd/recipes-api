@@ -348,6 +348,7 @@ async def main():
     query = "Write a review for PR: " + str(pr_number)
     print(f"Starting agent workflow with query: '{query}'")
 
+    try:
         response = await workflow_agent.run(user_msg=query)
         print("\nWorkflow finished.")
         print("Final response:", response)
