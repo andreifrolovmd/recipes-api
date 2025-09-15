@@ -345,7 +345,7 @@ async def main():
     print(f"  - OPENAI_API_KEY: {'Set' if openai_api_key else 'Not set'}")
 
     # Construct a dynamic prompt based on the PR number
-    query = f"Write and post a review for PR number {pr_number} in the repository {full_repo_name}."
+    query = "Write a review for PR: " + pr_number
     print(f"Starting agent workflow with query: '{query}'")
 
     try:
