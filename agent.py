@@ -352,10 +352,10 @@ async def main():
         response = await workflow_agent.run(user_msg=query)
         print("\nWorkflow finished.")
         print("Final response:", response)
-        
+
         # The response object is the final review string itself
         final_review_comment = response
-        
+
         if final_review_comment:
             print("I will save this review comment now.")
             # Use the post_review_to_github tool to post the review
