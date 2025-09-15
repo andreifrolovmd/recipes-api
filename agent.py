@@ -349,8 +349,8 @@ async def main():
     print(f"Starting agent workflow with query: '{query}'")
 
     try:
-        # FIXED: Changed from arun() to run()
-        response = await workflow_agent.run(input=query)
+        # FIXED: Changed from arun() to run() and use user_msg parameter
+        response = await workflow_agent.run(user_msg=query)
         print("\nWorkflow finished.")
         print("Final response:", response)
     except Exception as e:
