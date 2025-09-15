@@ -353,12 +353,10 @@ async def main():
         print("\nWorkflow finished.")
         print("Final response:", response)
 
-        # After the workflow runs, retrieve the final review from the state and post it.
-        final_review_comment = workflow_agent._contexts.store.state["final_review_comment"]
+        final_review_comment = response.final_response
 
         if final_review_comment:
             print("I will save this review comment now.")
-            # Use the post_review_to_github tool to post the review
             post_result = post_review_to_github(pr_number, final_review_comment)
             print("Post review result:", post_result)
         else:
@@ -367,7 +365,6 @@ async def main():
     except Exception as e:
         print(f"\nWorkflow failed with error: {str(e)}")
         raise
-
 # -----------------------------
 # Entrypoint
 # -----------------------------
