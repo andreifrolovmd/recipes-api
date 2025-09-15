@@ -305,7 +305,7 @@ Your responsibilities:
    - Specify what is good about the PR
    - Check if the author followed ALL contribution rules and note what is missing
    - Include notes on test availability for new functionality
-   - Include notes on whether new endpoints are documented  
+   - Include notes on whether new endpoints are documented
    - Include suggestions on which lines could be improved with quoted examples
 
 3. If the review does not meet these criteria, ask the CommentorAgent to rewrite and address the concerns.
@@ -345,11 +345,10 @@ async def main():
     print(f"  - OPENAI_API_KEY: {'Set' if openai_api_key else 'Not set'}")
 
     # Construct a dynamic prompt based on the PR number
-    query = "Write a review for PR: " + pr_number
+    query = "Write a review for PR: " + str(pr_number)
     print(f"Starting agent workflow with query: '{query}'")
 
     try:
-        # FIXED: Changed from arun() to run() and use user_msg parameter
         response = await workflow_agent.run(user_msg=query)
         print("\nWorkflow finished.")
         print("Final response:", response)
