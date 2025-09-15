@@ -30,6 +30,7 @@ jobs:
           poetry run coverage xml -o coverage.xml
       - name: Publish coverage results
         if: always()
+        continue-on-error: true
         uses: aGallea/tests-coverage-report@v1
         with:
           cobertura-path: coverage.xml
@@ -40,4 +41,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: poetry run python agent.py $GITHUB_TOKEN $REPOSITORY $PR_NUMBER $OPENAI_API_KEY $OPENAI_BASE_URL
+        run: poetry run python agent.py
