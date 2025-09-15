@@ -352,10 +352,9 @@ async def main():
         response = await workflow_agent.run(user_msg=query)
         print("\nWorkflow finished.")
         print("Final response:", response)
-
-        # After the workflow runs, retrieve the final review from the state and post it.
-
-        final_review_comment = workflow_agent._contexts.store.state["final_review_comment"]
+        
+        # The response object is the final review string itself
+        final_review_comment = response
         
         if final_review_comment:
             print("I will save this review comment now.")
@@ -368,7 +367,6 @@ async def main():
     except Exception as e:
         print(f"\nWorkflow failed with error: {str(e)}")
         raise
-
 # -----------------------------
 # Entrypoint
 # -----------------------------
