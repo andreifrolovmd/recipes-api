@@ -352,6 +352,18 @@ async def main():
         response = await workflow_agent.run(user_msg=query)
         print("\nWorkflow finished.")
         print("Final response:", response)
+
+        # After the workflow runs, retrieve the final review from the state and post it.
+        final_review_comment = workflow_agent.context.store.state["final_review_comment"]
+        
+        if final_review_comment:
+            print("I will save this review comment now.")
+            # Use the post_review_to_github tool to post the review
+            post_result = post_review_to_github(pr_number, final_review_comment)
+            print("Post review result:", post_result)
+        else:
+            print("No final review comment found in the state. Review was not posted.")
+
     except Exception as e:
         print(f"\nWorkflow failed with error: {str(e)}")
         raise
@@ -361,5 +373,3 @@ async def main():
 # -----------------------------
 if __name__ == "__main__":
     asyncio.run(main())
-
-
