@@ -26,6 +26,7 @@ poetry shell
 # Apply database migrations
 poetry run python manage.py migrate
 
+
 # Create a superuser for the admin interface
 poetry run python manage.py createsuperuser
 
@@ -65,3 +66,5 @@ Please read [CONTRIBUTING.md](https://github.com/the-nulldev/recipes-api/blob/ma
 
 This project is licensed under the MIT License. See [LICENSE](https://github.com/the-nulldev/recipes-api/blob/main/LICENSE) for details.
 
+#Feature 1 - I was here! 
+#Feature 2 - I have a new idea!

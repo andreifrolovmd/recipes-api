@@ -305,7 +305,7 @@ Your responsibilities:
    - Specify what is good about the PR
    - Check if the author followed ALL contribution rules and note what is missing
    - Include notes on test availability for new functionality
-   - Include notes on whether new endpoints are documented  
+   - Include notes on whether new endpoints are documented
    - Include suggestions on which lines could be improved with quoted examples
 
 3. If the review does not meet these criteria, ask the CommentorAgent to rewrite and address the concerns.
@@ -345,14 +345,24 @@ async def main():
     print(f"  - OPENAI_API_KEY: {'Set' if openai_api_key else 'Not set'}")
 
     # Construct a dynamic prompt based on the PR number
-    query = f"Write and post a review for PR number {pr_number} in the repository {full_repo_name}."
+    query = "Write a review for PR: " + str(pr_number)
     print(f"Starting agent workflow with query: '{query}'")
 
-    try:
-        # FIXED: Changed from arun() to run() and use user_msg parameter
         response = await workflow_agent.run(user_msg=query)
         print("\nWorkflow finished.")
         print("Final response:", response)
+
+        # After the workflow runs, retrieve the final review from the state and post it.
+        final_review_comment = workflow_agent.context.store.state["final_review_comment"]
+        
+        if final_review_comment:
+            print("I will save this review comment now.")
+            # Use the post_review_to_github tool to post the review
+            post_result = post_review_to_github(pr_number, final_review_comment)
+            print("Post review result:", post_result)
+        else:
+            print("No final review comment found in the state. Review was not posted.")
+
     except Exception as e:
         print(f"\nWorkflow failed with error: {str(e)}")
         raise
