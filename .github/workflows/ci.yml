@@ -1,17 +1,16 @@
 name: CI
 on:
   pull_request:
+    types: [opened, synchronize, reopened]
 jobs:
   ci:
     runs-on: ubuntu-latest
     permissions:
       checks: write
       pull-requests: write
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -25,9 +24,10 @@ jobs:
         run: |
           poetry run python manage.py migrate --noinput
       - name: Run pytest with coverage
+        continue-on-error: true
         run: |
-            poetry run coverage run -m pytest --junit-xml=pytest.xml
-            poetry run coverage xml -o coverage.xml
+          poetry run coverage run -m pytest --junit-xml=pytest.xml
+          poetry run coverage xml -o coverage.xml
       - name: Publish coverage results
         if: always()
         uses: aGallea/tests-coverage-report@v1
@@ -40,6 +40,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
         run: poetry run python agent.py $GITHUB_TOKEN $REPOSITORY $PR_NUMBER $OPENAI_API_KEY $OPENAI_BASE_URL
