@@ -362,5 +362,5 @@ async def main():
 # -----------------------------
 if __name__ == "__main__":
     asyncio.run(main())
-    if git:
-        git.close()
+    # Note: PyGithub Github object doesn't have a close() method
+    # The connection is automatically cleaned up
