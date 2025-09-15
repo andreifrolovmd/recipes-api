@@ -353,10 +353,12 @@ async def main():
         print("\nWorkflow finished.")
         print("Final response:", response)
 
-        final_review_comment = response.final_response
+        # The response object is the final review string itself
+        final_review_comment = response
 
         if final_review_comment:
             print("I will save this review comment now.")
+            # Use the post_review_to_github tool to post the review
             post_result = post_review_to_github(pr_number, final_review_comment)
             print("Post review result:", post_result)
         else:
