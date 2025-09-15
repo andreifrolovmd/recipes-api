@@ -354,7 +354,7 @@ async def main():
         print("Final response:", response)
 
         # After the workflow runs, retrieve the final review from the state and post it.
-        final_review_comment = workflow_agent.context.store.state["final_review_comment"]
+        final_review_comment = workflow_agent._contexts.store.state["final_review_comment"]
 
         if final_review_comment:
             print("I will save this review comment now.")
